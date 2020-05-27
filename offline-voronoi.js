@@ -32,10 +32,6 @@ function pruneWeightlessNodes(hierarchy) {
 }
 
 function deHierarchify(node) {
-  const tmp = { ...node };
-  tmp.children = 'elided';
-  tmp.parent = 'elided';
-  console.log(tmp);
   const children = node.children
     ? node.children.map((n) => deHierarchify(n))
     : undefined;
@@ -50,7 +46,7 @@ function deHierarchify(node) {
 
 async function main({ input, output }) {
   const rawData = await fs.readFile(input, 'utf-8');
-  const width = 1024.0;
+  const width = 1024;
   const parsedData = JSON.parse(rawData);
   //   console.log(parsedData);
   console.log('building hierarchy');
@@ -68,7 +64,6 @@ async function main({ input, output }) {
   const results = deHierarchify(rootNode);
 
   console.log('saving');
-  console.log(results);
   await fs.writeFile(output, JSON.stringify(results, null, 2));
   return 'OK';
 }
