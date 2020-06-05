@@ -12,7 +12,6 @@
   "dependencies": {
     "d3": "^5.16.0",
     "d3-hierarchy": "^1.1.9",
-    "d3-voronoi-treemap": "^1.1.0",
     "yargs": "^15.3.1"
   },
   "devDependencies": {
