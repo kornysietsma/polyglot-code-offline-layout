@@ -14,10 +14,7 @@ function computeCirclingPolygon(points, radius) {
   const circlingPolygon = [];
 
   for (let a = 0, i = 0; i < points; i++, a += increment) {
-    circlingPolygon.push([
-      radius + radius * Math.cos(a),
-      radius + radius * Math.sin(a),
-    ]);
+    circlingPolygon.push([radius * Math.cos(a), radius * Math.sin(a)]);
   }
 
   return circlingPolygon;
@@ -78,6 +75,7 @@ function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
   node.layout = {
     polygon: clipPolygon,
     center,
+    algorithm: 'voronoi',
   };
 
   if (!node.children) {
@@ -167,7 +165,7 @@ function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
   }
 }
 
-async function main({ input, output, points }) {
+async function main({ input, output, points, circles }) {
   const rawData = await fs.readFile(input, 'utf-8');
   const width = 1024;
   const parsedData = JSON.parse(rawData);
@@ -178,15 +176,59 @@ async function main({ input, output, points }) {
   pruneWeightlessNodes(parsedData);
 
   // top level clip shape
-  const clipPolygon = computeCirclingPolygon(points, width / 2);
-  const center = [width / 2, width / 2];
+  if (circles) {
+    // area = pi r^2 so r = sqrt(area/pi) or just use sqrt(area) for simplicity
+    console.log('getting children');
+    const children = parsedData.children.map((child) => {
+      console.log('child weight', child.value);
+      return { r: Math.sqrt(child.value), originalObject: child };
+    });
+    d3.packSiblings(children);
+    console.log('children', children);
+    // top level layout
+    const enclosingCirle = d3.packEnclose(children);
+    const { x, y, r } = enclosingCirle;
+    // TODO: offset by x/y
+    console.log('enclosing circle radius', r);
+    parsedData.layout = {
+      polygon: computeCirclingPolygon(points, r),
+      center: [0, 0],
+      width: r * 2,
+      height: r * 2,
+      algorithm: 'circlePack',
+    };
+    console.log('top layout', parsedData.layout);
 
-  calculateVoronoi(null, parsedData, clipPolygon, center);
+    for (const child of children) {
+      const clipPolygon = computeCirclingPolygon(
+        points,
+        child.r
+      ).map(([x, y]) => [x + child.x, y + child.y]);
+      const center = [child.x, child.y];
+      console.log('calculating voronoi for ', child.originalObject.name);
+      calculateVoronoi(
+        child.originalObject.name,
+        child.originalObject,
+        clipPolygon,
+        center
+      );
+      child.originalObject.layout.width = child.r;
+      child.originalObject.layout.height = child.r;
+    }
+  } else {
+    const clipPolygon = computeCirclingPolygon(points, width / 2);
+    const center = [0, 0];
+
+    calculateVoronoi(null, parsedData, clipPolygon, center);
+
+    parsedData.layout.width = width;
+    parsedData.layout.height = width;
+  }
 
   const results = addPaths(null, parsedData);
 
   console.log('saving');
-  await fs.writeFile(output, JSON.stringify(results, null, 2));
+  await fs.writeFile(output, JSON.stringify(results));
   return 'OK';
 }
 
@@ -201,6 +243,10 @@ const argv = yargs
   .number('p')
   .default('p', 128)
   .describe('p', 'number of points in the initial bounding circle/polygon')
+  .describe('c', 'use circle packing for top level')
+  .boolean('c')
+  .alias('c', 'circles')
+  .default('c', false)
   .demandOption(['i', 'o'])
   .help('h')
   .alias('h', 'help')
@@ -215,6 +261,7 @@ const args = {
   input: argv.input,
   output: argv.output,
   points: argv.points,
+  circles: argv.circles,
 };
 
 main(args).then(
