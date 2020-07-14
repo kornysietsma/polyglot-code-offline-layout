@@ -70,7 +70,14 @@ function calculate_values(node) {
   }
 }
 
-function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
+function calculateVoronoi(
+  nameSoFar,
+  node,
+  clipPolygon,
+  center,
+  goodenough,
+  depth
+) {
   const name = nameSoFar ? `${nameSoFar}/${node.name}` : node.name;
   node.layout = {
     polygon: clipPolygon,
@@ -81,23 +88,35 @@ function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
   if (!node.children) {
     return;
   }
+  if (depth < 3) {
+    console.warn(`calculating voronoi for ${name}`);
+  } else if (depth === 3) {
+    console.warn(`calculating voronoi for ${name} and descendants`);
+  }
   if (debug) {
     console.log(
-      `calculating map for ${name} with ${node.children.length} children and a clip polygon with ${clipPolygon.length} vertices`
+      `calculating voronoi for ${name} with ${node.children.length} children and a clip polygon with ${clipPolygon.length} vertices`
     );
   }
 
-  const MY_MAX_COUNT = 500;
-  let metaCount = 0;
-  let metaEnded = false;
-  const META_MAX_COUNT = 100;
-  while (!metaEnded) {
+  let currentOverweightedAlgorithm = 1; // algorithm 0 is more stable but maybe not as good?
+  const ALGORITHM_CHANGE_COUNT = 20; // generally algorithm 1 either works pretty quickly, or not at all. So switch pretty quickly if it fails
+  const MAX_SIMULATION_COUNT = 200; // we re-run the whole simulation this many times if it fails
+  const MAX_ITERATION_COUNT = 500; // this is how many times a particular simulation iterates
+  const MIN_WEIGHT_RATIO = 0.005; // maybe this should be a parameter? Too high, we iterate a lot.  Too low, sizes are not proportional to lines of code.
+  // TODO: store the best simulation so far for a particular simulation?
+  let simulationCount = 0;
+  let simulationLoopEnded = false;
+  let bestConvergenceRatio = 1.0;
+  let bestPolygons = undefined;
+  while (!simulationLoopEnded) {
     try {
       var simulation = voronoiMapSimulation(node.children)
-        .maxIterationCount(MY_MAX_COUNT)
-        .minWeightRatio(0.01)
+        .maxIterationCount(MAX_ITERATION_COUNT)
+        .minWeightRatio(MIN_WEIGHT_RATIO)
         .weight((d) => d.value)
         .clip(clipPolygon)
+        .overweightedAlgorithm(currentOverweightedAlgorithm)
         .stop();
 
       var state = simulation.state();
@@ -117,34 +136,87 @@ function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
         simulation.tick();
         state = simulation.state();
       }
-      if (tickCount === MY_MAX_COUNT) {
-        if (metaCount < META_MAX_COUNT) {
-          metaCount = metaCount + 1;
+      if (tickCount === MAX_ITERATION_COUNT) {
+        if (state.convergenceRatio < bestConvergenceRatio) {
           console.log(
-            `processing ${name} with ${node.children.length} children - Exceeded tick count ${tickCount} - retrying from scratch, try ${metaCount}`
+            'best iteration result so far',
+            simulationCount,
+            state.convergenceRatio
           );
+          bestConvergenceRatio = state.convergenceRatio;
+          bestPolygons = [...state.polygons];
+        }
+
+        if (simulationCount < MAX_SIMULATION_COUNT) {
+          simulationCount = simulationCount + 1;
+
+          console.log(
+            `processing ${name} with ${node.children.length} children - Exceeded tick count ${tickCount} - retrying from scratch, try ${simulationCount}`
+          );
+          if (
+            simulationCount >= ALGORITHM_CHANGE_COUNT &&
+            currentOverweightedAlgorithm == 1
+          ) {
+            currentOverweightedAlgorithm = 0;
+            console.warn(
+              `after ${simulationCount} attempts, switching to alternative handleOverweight algorithm ${currentOverweightedAlgorithm}`
+            );
+          }
         } else {
-          console.error('Too many meta retries - stopping anyway');
-          metaEnded = true;
+          console.error('Too many meta retries - stopping');
+          simulationLoopEnded = true;
+          if (!goodenough) {
+            throw Error("Too many retries, can't provide good simulation");
+          } else {
+            console.log('returning good-enough result', bestConvergenceRatio);
+          }
         }
       } else {
-        metaEnded = true;
+        if (bestPolygons) {
+          console.log(
+            'successful converging layout, using real ratio not best-so-far: ',
+            state.convergenceRatio
+          );
+          bestPolygons = undefined;
+          bestConvergenceRatio = state.convergenceRatio;
+        }
+        simulationLoopEnded = true;
       }
     } catch (e) {
       // re-try from scratch but only after predictable exceptions
-      console.error('caught e', e);
-      if (!e instanceof Error) {
-        console.error('not Error');
+      console.log('caught e', e.message);
+      if (!(e instanceof Error) && !(e instanceof TypeError)) {
+        console.error('not Error or TypeError');
         throw e;
       }
-      if (e.message == 'bad_polygons' || e.message == 'overweight_loop') {
-        metaCount = metaCount + 1;
-        if (metaCount < META_MAX_COUNT) {
-          console.error(`caught ${e.message}, retrying`, metaCount);
+      if (
+        e.message == 'bad_polygons' ||
+        e.message == 'overweight_loop' ||
+        e.message === "Cannot set property 'twin' of null"
+      ) {
+        simulationCount = simulationCount + 1;
+        if (simulationCount < MAX_SIMULATION_COUNT) {
+          console.log(`caught ${e.message}, retrying`, simulationCount);
+          if (
+            simulationCount >= ALGORITHM_CHANGE_COUNT &&
+            currentOverweightedAlgorithm == 1
+          ) {
+            currentOverweightedAlgorithm = 0;
+            console.log(
+              `after ${simulationCount} attempts, switching to alternative handleOverweight algorithm ${currentOverweightedAlgorithm}`
+            );
+          }
         } else {
-          console.error(`caught ${e.message}, too many errors!`, metaCount);
-          metaEnded = true; // but fail anyway
-          throw e;
+          console.error(
+            `caught ${e.message}, too many errors!`,
+            simulationCount
+          );
+          simulationLoopEnded = true;
+          if (!goodenough) {
+            throw Error("Too many retries, can't provide good simulation");
+          } else {
+            console.log('returning good-enough result', bestConvergenceRatio);
+          }
         }
       } else {
         console.error(`unhandled exception ${e.message} - rethrowing`);
@@ -153,6 +225,18 @@ function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
     }
   }
   var polygons = state.polygons;
+  if (bestPolygons) {
+    console.error(
+      'No good layout found - using best convergence ratio',
+      bestConvergenceRatio
+    );
+    polygons = bestPolygons;
+  } else {
+    console.log(
+      'Successful layout - best convergence ratio',
+      state.convergenceRatio
+    );
+  }
 
   for (const polygon of polygons) {
     const pdata = polygon.map((d) => d);
@@ -160,16 +244,18 @@ function calculateVoronoi(nameSoFar, node, clipPolygon, center) {
       name,
       polygon.site.originalObject.data.originalData,
       pdata,
-      [polygon.site.x, polygon.site.y]
+      [polygon.site.x, polygon.site.y],
+      goodenough,
+      depth + 1
     );
   }
 }
 
-async function main({ input, output, points, circles }) {
+async function main({ input, output, points, circles, goodenough }) {
   const rawData = await fs.readFile(input, 'utf-8');
   const width = 1024;
   const parsedData = JSON.parse(rawData);
-  //   console.log(parsedData);
+
   console.log('getting values recursively');
   calculate_values(parsedData);
   console.log('pruning empty nodes');
@@ -178,18 +264,14 @@ async function main({ input, output, points, circles }) {
   // top level clip shape
   if (circles) {
     // area = pi r^2 so r = sqrt(area/pi) or just use sqrt(area) for simplicity
-    console.log('getting children');
     const children = parsedData.children.map((child) => {
-      console.log('child weight', child.value);
       return { r: Math.sqrt(child.value), originalObject: child };
     });
     d3.packSiblings(children);
-    console.log('children', children);
     // top level layout
     const enclosingCirle = d3.packEnclose(children);
     const { x, y, r } = enclosingCirle;
     // TODO: offset by x/y
-    console.log('enclosing circle radius', r);
     parsedData.layout = {
       polygon: computeCirclingPolygon(points, r),
       center: [0, 0],
@@ -197,7 +279,6 @@ async function main({ input, output, points, circles }) {
       height: r * 2,
       algorithm: 'circlePack',
     };
-    console.log('top layout', parsedData.layout);
 
     for (const child of children) {
       const clipPolygon = computeCirclingPolygon(
@@ -205,12 +286,14 @@ async function main({ input, output, points, circles }) {
         child.r
       ).map(([x, y]) => [x + child.x, y + child.y]);
       const center = [child.x, child.y];
-      console.log('calculating voronoi for ', child.originalObject.name);
+
       calculateVoronoi(
         child.originalObject.name,
         child.originalObject,
         clipPolygon,
-        center
+        center,
+        goodenough,
+        1
       );
       child.originalObject.layout.width = child.r;
       child.originalObject.layout.height = child.r;
@@ -219,7 +302,7 @@ async function main({ input, output, points, circles }) {
     const clipPolygon = computeCirclingPolygon(points, width / 2);
     const center = [0, 0];
 
-    calculateVoronoi(null, parsedData, clipPolygon, center);
+    calculateVoronoi(null, parsedData, clipPolygon, center, goodenough, 0);
 
     parsedData.layout.width = width;
     parsedData.layout.height = width;
@@ -227,7 +310,7 @@ async function main({ input, output, points, circles }) {
 
   const results = addPaths(null, parsedData);
 
-  console.log('saving');
+  console.warn('saving');
   await fs.writeFile(output, JSON.stringify(results));
   return 'OK';
 }
@@ -243,6 +326,13 @@ const argv = yargs
   .number('p')
   .default('p', 128)
   .describe('p', 'number of points in the initial bounding circle/polygon')
+  .boolean('g')
+  .alias('g', 'goodenough')
+  .default('g', true)
+  .describe(
+    'g',
+    'accept a good-enough voronoi simulation, rather than failing if perfect one not found'
+  )
   .describe('c', 'use circle packing for top level')
   .boolean('c')
   .alias('c', 'circles')
@@ -262,6 +352,7 @@ const args = {
   output: argv.output,
   points: argv.points,
   circles: argv.circles,
+  goodenough: argv.goodenough,
 };
 
 main(args).then(
