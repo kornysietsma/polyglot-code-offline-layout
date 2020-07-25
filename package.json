@@ -1,8 +1,8 @@
 {
-  "name": "offline-voronoi",
+  "name": "polyglot-code-offline-layout",
   "version": "1.0.0",
-  "description": "process voronoi data before visualization",
-  "main": "offline-voronoi.js",
+  "description": "calculate d3 layout for polyglot code tools",
+  "main": "layout.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

@@ -1,4 +1,4 @@
-# Polyglot tools offline voronoi layout
+# Polyglot code offline layout
 
 This is a quite hacky script to calculate Voronoi Treemap layouts for JSON files produced by the polyglot-code-scanner program.
 
