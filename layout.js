@@ -94,7 +94,7 @@ function calculateVoronoi(
     console.warn(`calculating voronoi for ${name} and descendants`);
   }
   if (debug) {
-    console.log(
+    console.warn(
       `calculating voronoi for ${name} with ${node.children.length} children and a clip polygon with ${clipPolygon.length} vertices`
     );
   }
@@ -129,7 +129,7 @@ function calculateVoronoi(
         if (now - warningTime > 10000) {
           // every 10 seconds
           warningTime = now;
-          console.log(
+          console.warn(
             `slow voronoi processing of ${name} with ${node.children.length} children, tick count: ${tickCount}`
           );
         }
@@ -138,7 +138,7 @@ function calculateVoronoi(
       }
       if (tickCount === MAX_ITERATION_COUNT) {
         if (state.convergenceRatio < bestConvergenceRatio) {
-          console.log(
+          console.warn(
             'best iteration result so far',
             simulationCount,
             state.convergenceRatio
@@ -150,7 +150,7 @@ function calculateVoronoi(
         if (simulationCount < MAX_SIMULATION_COUNT) {
           simulationCount = simulationCount + 1;
 
-          console.log(
+          console.warn(
             `processing ${name} with ${node.children.length} children - Exceeded tick count ${tickCount} - retrying from scratch, try ${simulationCount}`
           );
           if (
@@ -168,12 +168,12 @@ function calculateVoronoi(
           if (!goodenough) {
             throw Error("Too many retries, can't provide good simulation");
           } else {
-            console.log('returning good-enough result', bestConvergenceRatio);
+            console.warn('returning good-enough result', bestConvergenceRatio);
           }
         }
       } else {
         if (bestPolygons) {
-          console.log(
+          console.warn(
             'successful converging layout, using real ratio not best-so-far: ',
             state.convergenceRatio
           );
@@ -184,7 +184,7 @@ function calculateVoronoi(
       }
     } catch (e) {
       // re-try from scratch but only after predictable exceptions
-      console.log('caught e', e.message);
+      console.warn('caught e', e.message);
       if (!(e instanceof Error) && !(e instanceof TypeError)) {
         console.error('not Error or TypeError');
         throw e;
@@ -196,13 +196,13 @@ function calculateVoronoi(
       ) {
         simulationCount = simulationCount + 1;
         if (simulationCount < MAX_SIMULATION_COUNT) {
-          console.log(`caught ${e.message}, retrying`, simulationCount);
+          console.warn(`caught ${e.message}, retrying`, simulationCount);
           if (
             simulationCount >= ALGORITHM_CHANGE_COUNT &&
             currentOverweightedAlgorithm == 1
           ) {
             currentOverweightedAlgorithm = 0;
-            console.log(
+            console.warn(
               `after ${simulationCount} attempts, switching to alternative handleOverweight algorithm ${currentOverweightedAlgorithm}`
             );
           }
@@ -215,7 +215,7 @@ function calculateVoronoi(
           if (!goodenough) {
             throw Error("Too many retries, can't provide good simulation");
           } else {
-            console.log('returning good-enough result', bestConvergenceRatio);
+            console.warn('returning good-enough result', bestConvergenceRatio);
           }
         }
       } else {
@@ -232,7 +232,7 @@ function calculateVoronoi(
     );
     polygons = bestPolygons;
   } else {
-    console.log(
+    console.warn(
       'Successful layout - best convergence ratio',
       state.convergenceRatio
     );
@@ -251,14 +251,22 @@ function calculateVoronoi(
   }
 }
 
+async function read(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function main({ input, output, points, circles, goodenough }) {
-  const rawData = await fs.readFile(input, 'utf-8');
+  const rawData = input
+    ? await fs.readFile(input, 'utf-8')
+    : await read(process.stdin);
   const width = 1024;
   const parsedData = JSON.parse(rawData);
 
-  console.log('getting values recursively');
+  console.warn('getting values recursively');
   calculate_values(parsedData);
-  console.log('pruning empty nodes');
+  console.warn('pruning empty nodes');
   pruneWeightlessNodes(parsedData);
 
   // top level clip shape
@@ -311,7 +319,11 @@ async function main({ input, output, points, circles, goodenough }) {
   const results = addPaths(null, parsedData);
 
   console.warn('saving');
-  await fs.writeFile(output, JSON.stringify(results));
+  if (output) {
+    await fs.writeFile(output, JSON.stringify(results));
+  } else {
+    process.stdout.write(JSON.stringify(results));
+  }
   return 'OK';
 }
 
@@ -337,15 +349,8 @@ const argv = yargs
   .boolean('c')
   .alias('c', 'circles')
   .default('c', false)
-  .demandOption(['i', 'o'])
   .help('h')
-  .alias('h', 'help')
-  .check((argv) => {
-    if (existsSync(argv.i)) {
-      return true;
-    }
-    throw new Error(`Argument check failed: ${argv.i} does not exist`);
-  }).argv;
+  .alias('h', 'help').argv;
 
 const args = {
   input: argv.input,
