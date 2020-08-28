@@ -1,12 +1,14 @@
-import { promises as fs, existsSync } from 'fs';
-import yargs from 'yargs';
-import dvm from 'd3-voronoi-map';
+#!/usr/bin/env node
+
+const { promises: fs, existsSync } = require('fs');
+const yargs = require('yargs');
+const dvm = require('d3-voronoi-map');
+const d3 = require('d3');
 
 const voronoiMapSimulation = dvm.voronoiMapSimulation;
 
 const debug = false;
 
-import d3 from 'd3';
 // import vtm from 'd3-voronoi-treemap';
 
 function computeCirclingPolygon(points, radius) {

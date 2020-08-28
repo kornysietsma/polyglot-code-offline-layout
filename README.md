@@ -6,7 +6,7 @@ For an overview see <https://polyglot.korny.info>
 
 For more detailed instructions on running this tool see <https://polyglot.korny.info/tools/layout/howto>
 
-You can run this script using node.js, or via Docker
+You can run this script using node.js, or via Docker - or binary builds are coming
 
 ## Running this script using node.js
 
@@ -68,3 +68,8 @@ I've set up Docker so it doesn't mount the file system at all - this is much saf
 
 But this means from the perspective of the script, it can't read or write to the file system at all.
 
+## Binary executables
+
+I am experimenting with using [pkg](https://www.npmjs.com/package/pkg) to package up runnable executables to make this simpler to use.
+
+If you run `npm run-script build` it will build binaries for Windows, MacOS and Linux into a `dist` directory.  At some stage I plan to automate uploading these to Github releases - when I find the time!
