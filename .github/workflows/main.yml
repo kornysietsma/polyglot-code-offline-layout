@@ -24,7 +24,7 @@ jobs:
           zip --junk-paths dist/polyglot-code-offline-layout-macos.zip dist/polyglot-code-offline-layout-macos README.md CHANGELOG.md
           zip --junk-paths dist/polyglot-code-offline-layout-win.zip dist/polyglot-code-offline-layout-win.exe README.md CHANGELOG.md
       - name: Release
-        uses: anton-yurchenko/git-release@v3.4.1
+        uses: docker://antonyurchenko/git-release:v3.4.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DRAFT_RELEASE: 'false'
@@ -32,6 +32,7 @@ jobs:
           CHANGELOG_FILE: 'CHANGELOG.md'
           ALLOW_EMPTY_CHANGELOG: 'false'
           ALLOW_TAG_PREFIX: 'true'
+          RELEASE_NAME_PREFIX: 'Release: '
         with:
           args: |
             dist/*.zip
