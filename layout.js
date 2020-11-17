@@ -101,12 +101,9 @@ function calculateVoronoi(
     );
   }
 
-  let currentOverweightedAlgorithm = 1; // algorithm 0 is more stable but maybe not as good?
-  const ALGORITHM_CHANGE_COUNT = 20; // generally algorithm 1 either works pretty quickly, or not at all. So switch pretty quickly if it fails
   const MAX_SIMULATION_COUNT = 200; // we re-run the whole simulation this many times if it fails
   const MAX_ITERATION_COUNT = 500; // this is how many times a particular simulation iterates
   const MIN_WEIGHT_RATIO = 0.005; // maybe this should be a parameter? Too high, we iterate a lot.  Too low, sizes are not proportional to lines of code.
-  // TODO: store the best simulation so far for a particular simulation?
   let simulationCount = 0;
   let simulationLoopEnded = false;
   let bestConvergenceRatio = 1.0;
@@ -118,7 +115,6 @@ function calculateVoronoi(
         .minWeightRatio(MIN_WEIGHT_RATIO)
         .weight((d) => d.value)
         .clip(clipPolygon)
-        .overweightedAlgorithm(currentOverweightedAlgorithm)
         .stop();
 
       var state = simulation.state();
@@ -140,11 +136,13 @@ function calculateVoronoi(
       }
       if (tickCount === MAX_ITERATION_COUNT) {
         if (state.convergenceRatio < bestConvergenceRatio) {
-          console.warn(
-            'best iteration result so far',
-            simulationCount,
-            state.convergenceRatio
-          );
+          if (debug) {
+            console.warn(
+              'best iteration result so far',
+              simulationCount,
+              state.convergenceRatio
+            );
+          }
           bestConvergenceRatio = state.convergenceRatio;
           bestPolygons = [...state.polygons];
         }
@@ -155,15 +153,6 @@ function calculateVoronoi(
           console.warn(
             `processing ${name} with ${node.children.length} children - Exceeded tick count ${tickCount} - retrying from scratch, try ${simulationCount}`
           );
-          if (
-            simulationCount >= ALGORITHM_CHANGE_COUNT &&
-            currentOverweightedAlgorithm == 1
-          ) {
-            currentOverweightedAlgorithm = 0;
-            console.warn(
-              `after ${simulationCount} attempts, switching to alternative handleOverweight algorithm ${currentOverweightedAlgorithm}`
-            );
-          }
         } else {
           console.error('Too many meta retries - stopping');
           simulationLoopEnded = true;
@@ -192,22 +181,16 @@ function calculateVoronoi(
         throw e;
       }
       if (
-        e.message == 'bad_polygons' ||
-        e.message == 'overweight_loop' ||
-        e.message === "Cannot set property 'twin' of null"
+        e.message === 'handleOverweighted1 is looping too much' ||
+        e.message ===
+          'at least 1 site has no area, which is not supposed to arise'
       ) {
         simulationCount = simulationCount + 1;
         if (simulationCount < MAX_SIMULATION_COUNT) {
-          console.warn(`caught ${e.message}, retrying`, simulationCount);
-          if (
-            simulationCount >= ALGORITHM_CHANGE_COUNT &&
-            currentOverweightedAlgorithm == 1
-          ) {
-            currentOverweightedAlgorithm = 0;
-            console.warn(
-              `after ${simulationCount} attempts, switching to alternative handleOverweight algorithm ${currentOverweightedAlgorithm}`
-            );
-          }
+          console.warn(
+            `caught ${e.message}, retrying from scratch`,
+            simulationCount
+          );
         } else {
           console.error(
             `caught ${e.message}, too many errors!`,
@@ -221,7 +204,9 @@ function calculateVoronoi(
           }
         }
       } else {
-        console.error(`unhandled exception ${e.message} - rethrowing`);
+        console.error(
+          `unhandled exception ${e.name}:${e.message} - rethrowing`
+        );
         throw e;
       }
     }
@@ -234,10 +219,12 @@ function calculateVoronoi(
     );
     polygons = bestPolygons;
   } else {
-    console.warn(
-      'Successful layout - best convergence ratio',
-      state.convergenceRatio
-    );
+    if (debug) {
+      console.warn(
+        'Successful layout - best convergence ratio',
+        state.convergenceRatio
+      );
+    }
   }
 
   for (const polygon of polygons) {
