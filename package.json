@@ -1,6 +1,6 @@
 {
   "name": "polyglot-code-offline-layout",
-  "version": "0.1.3",
+  "version": "0.2.0-alpha.0",
   "description": "calculate d3 layout for polyglot code tools",
   "engines": {
     "node": ">=14.0.0"

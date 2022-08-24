@@ -8,6 +8,13 @@ For more detailed instructions on running this tool see <https://polyglot.korny.
 
 You can run this script using node.js, or via Docker - or binary builds are coming
 
+## WORK IN PROGRESS WARNING
+
+I'm doing a lot of changes right now - if you fetch the current code, things may break.
+
+Especially note, I'm changed the data file formats created by the explorer and used by the scanner - I've added version number checks, but data files from the Scanner must match expectations of the Explorer, so for now it's a bit of "make sure you pull changes often" or things will break.
+
+
 ## Running this script using node.js
 
 1. Install node.js - see https://nodejs.org/en/download/package-manager/
@@ -31,8 +38,6 @@ The `-i` and `-o` parameters are optional, if you don't supply them the script w
 ```sh
 $ node layout.js < input.json > output.json
 ```
-
-If using Docker you _must_ do this, as Docker has been configured with no access to the file system, so it can't see your files.
 
 There are some optional parameters:
 

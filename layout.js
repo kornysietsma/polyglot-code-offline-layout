@@ -151,7 +151,7 @@ function calculateVoronoi(
           simulationCount = simulationCount + 1;
 
           console.warn(
-            `processing ${name} with ${node.children.length} children - Exceeded tick count ${tickCount} - retrying from scratch, try ${simulationCount}`
+            `processing ${name} with ${node.children.length} children - Exceeded tick count ${tickCount} - retrying from scratch, try ${simulationCount} of ${MAX_SIMULATION_COUNT}`
           );
         } else {
           console.error('Too many meta retries - stopping');
@@ -188,8 +188,7 @@ function calculateVoronoi(
         simulationCount = simulationCount + 1;
         if (simulationCount < MAX_SIMULATION_COUNT) {
           console.warn(
-            `caught ${e.message}, retrying from scratch`,
-            simulationCount
+            `caught ${e.message}, retrying from scratch try ${simulationCount} of ${MAX_SIMULATION_COUNT}`
           );
         } else {
           console.error(
@@ -254,14 +253,16 @@ async function main({ input, output, points, circles, goodenough }) {
   const parsedData = JSON.parse(rawData);
 
   console.warn('getting values recursively');
-  calculate_values(parsedData);
+  const treeData = parsedData['tree'];
+
+  calculate_values(treeData);
   console.warn('pruning empty nodes');
-  pruneWeightlessNodes(parsedData);
+  pruneWeightlessNodes(treeData);
 
   // top level clip shape
   if (circles) {
     // area = pi r^2 so r = sqrt(area/pi) or just use sqrt(area) for simplicity
-    const children = parsedData.children.map((child) => {
+    const children = treeData.children.map((child) => {
       return { r: Math.sqrt(child.value), originalObject: child };
     });
     d3.packSiblings(children);
@@ -269,7 +270,7 @@ async function main({ input, output, points, circles, goodenough }) {
     const enclosingCirle = d3.packEnclose(children);
     const { x, y, r } = enclosingCirle;
     // TODO: offset by x/y
-    parsedData.layout = {
+    treeData.layout = {
       polygon: computeCirclingPolygon(points, r),
       center: [0, 0],
       width: r * 2,
@@ -299,19 +300,21 @@ async function main({ input, output, points, circles, goodenough }) {
     const clipPolygon = computeCirclingPolygon(points, width / 2);
     const center = [0, 0];
 
-    calculateVoronoi(null, parsedData, clipPolygon, center, goodenough, 0);
+    calculateVoronoi(null, treeData, clipPolygon, center, goodenough, 0);
 
-    parsedData.layout.width = width;
-    parsedData.layout.height = width;
+    treeData.layout.width = width;
+    treeData.layout.height = width;
   }
 
-  const results = addPaths(null, parsedData);
+  const treeWithPaths = addPaths(null, treeData);
+
+  parsedData['tree'] = treeWithPaths;
 
   console.warn('saving');
   if (output) {
-    await fs.writeFile(output, JSON.stringify(results));
+    await fs.writeFile(output, JSON.stringify(parsedData));
   } else {
-    process.stdout.write(JSON.stringify(results));
+    process.stdout.write(JSON.stringify(parsedData));
   }
   return 'OK';
 }
