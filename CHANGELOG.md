@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.1] - 2022-11-15
+
+### Changed
+
+- minor but important change - make sure exit status is set on errors, for when this is called by scripts
+
 ## [0.3.0] - 2022-10-28
 
 ### Changed

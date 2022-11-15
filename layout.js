@@ -358,5 +358,6 @@ main(args).then(
   },
   (err) => {
     console.error('Error thrown!', err);
+    process.exit(1);
   }
 );
