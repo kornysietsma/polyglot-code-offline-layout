@@ -19,7 +19,7 @@
     "d3": "^5.16.0",
     "d3-hierarchy": "^1.1.9",
     "d3-voronoi-map": "^2.1.0",
-    "moment": "^2.27.0",
+    "moment": "^2.29.4",
     "yargs": "^15.4.1"
   },
   "devDependencies": {
