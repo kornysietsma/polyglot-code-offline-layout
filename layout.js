@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-const { promises: fs, existsSync } = require('fs');
+const { createReadStream, createWriteStream } = require('fs');
 const yargs = require('yargs');
 const dvm = require('d3-voronoi-map');
 const d3 = require('d3');
+const BigJSON = require('big-json');
 
 const voronoiMapSimulation = dvm.voronoiMapSimulation;
 
@@ -245,12 +246,49 @@ async function read(stream) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+async function readLargeFile(filePath) {
+  // Use big-json for all files - it's fast enough and handles both small and large files safely
+  console.warn('using big-json streaming parser');
+  return new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    const parser = BigJSON.createParseStream();
+    
+    parser.on('data', (data) => {
+      // The data event directly emits the fully parsed object
+      console.warn('finished parsing JSON');
+      resolve(data);
+    });
+    
+    parser.on('error', reject);
+    stream.on('error', reject);
+    stream.pipe(parser);
+  });
+}
+
+async function writeLargeJson(filePath, obj) {
+  // Use big-json to stream output and avoid string size limits
+  return new Promise((resolve, reject) => {
+    const writeStream = createWriteStream(filePath);
+    const stringifyStream = BigJSON.createStringifyStream({
+      body: obj
+    });
+    
+    stringifyStream.on('error', reject);
+    writeStream.on('error', reject);
+    writeStream.on('finish', resolve);
+    
+    stringifyStream.pipe(writeStream);
+  });
+}
+
 async function main({ input, output, points, circles, goodenough }) {
-  const rawData = input
-    ? await fs.readFile(input, 'utf-8')
-    : await read(process.stdin);
+  const parsedData = input
+    ? await readLargeFile(input)
+    : await (async () => {
+        const rawData = await read(process.stdin);
+        return JSON.parse(rawData);
+      })();
   const width = 1024;
-  const parsedData = JSON.parse(rawData);
 
   console.warn('getting values recursively');
   const treeData = parsedData['tree'];
@@ -312,7 +350,7 @@ async function main({ input, output, points, circles, goodenough }) {
 
   console.warn('saving');
   if (output) {
-    await fs.writeFile(output, JSON.stringify(parsedData));
+    await writeLargeJson(output, parsedData);
   } else {
     process.stdout.write(JSON.stringify(parsedData));
   }
