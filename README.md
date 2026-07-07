@@ -33,6 +33,12 @@ If you have multiple repositories in your source json, e.g. for a group of proje
 $ node layout.js -c -i input.json -o output.json
 ```
 
+Or for hierarchical circle packing at every level (switching to voronoi at git repository roots), use `-n`:
+
+```sh
+$ node layout.js -n -i input.json -o output.json
+```
+
 The `-i` and `-o` parameters are optional, if you don't supply them the script will read stdin and send output to stdout, so you can use unix-style pipes, or :
 
 ```sh
@@ -43,6 +49,7 @@ There are some optional parameters:
 
 - -h for help
 - -c to use circle packing for the top level shaping, voronoi for the rest
+- -n to use nested circle packing (circle packing at all levels except git repository roots, which use voronoi)
 - -g (the default) to accept an imperfect voronoi map - if you turn this off, the script will fail if it can't find a precise layout
 - -p NNN - specify how many points to use to draw the main circles around voronoi treemaps.  The default is 128, which is a pretty smooth circle.  You could specify `-p 6` and it will use hexagons!
 
