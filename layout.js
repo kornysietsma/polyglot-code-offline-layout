@@ -61,6 +61,307 @@ function addPaths(pathSoFar, node) {
   };
 }
 
+function isGitRepoRoot(node) {
+  // A directory is a git repo root if it has data.git with remote_url or head fields
+  // Directory git roots have: {remote_url, head}
+  // File git data has: {activity, age_in_days, creation_date, details, last_update, user_count, users}
+  if (debug && node.data?.git) {
+    console.warn(
+      `Node ${node.name} has git data:`,
+      JSON.stringify(node.data.git).substring(0, 100)
+    );
+  }
+  return node.data?.git && (node.data.git.remote_url || node.data.git.head);
+}
+
+// Helper: Calculate the required radius to enclose all packed circles
+// when the enclosing circle must be centered at origin [0, 0]
+function calculateEnclosingRadius(packedChildren) {
+  if (packedChildren.length === 0) return 0;
+  if (packedChildren.length === 1) {
+    // Single child: enclosing radius is distance from origin to child's edge
+    return Math.sqrt(packedChildren[0].x ** 2 + packedChildren[0].y ** 2) + packedChildren[0].r;
+  }
+  
+  // Multiple children: find the maximum distance from origin to any child's edge
+  let maxDist = 0;
+  for (const child of packedChildren) {
+    const distToCenter = Math.sqrt(child.x ** 2 + child.y ** 2);
+    const distToEdge = distToCenter + child.r;
+    if (distToEdge > maxDist) {
+      maxDist = distToEdge;
+    }
+  }
+  return maxDist;
+}
+
+// Helper: Calculate natural radius from value (for voronoi-like sizing)
+function getNaturalRadius(value) {
+  return Math.sqrt(value);
+}
+
+// Helper: Translate all coordinates in a subtree by an offset
+function translateSubtree(node, offsetX, offsetY) {
+  if (node.layout) {
+    node.layout.center = [node.layout.center[0] + offsetX, node.layout.center[1] + offsetY];
+    node.layout.polygon = node.layout.polygon.map(([x, y]) => [x + offsetX, y + offsetY]);
+  }
+  if (node.children) {
+    for (const child of node.children) {
+      translateSubtree(child, offsetX, offsetY);
+    }
+  }
+}
+
+function packChildren(
+  nameSoFar,
+  node,
+  points,
+  goodenough,
+  depth,
+  nestedMode,
+  parentCenter = [0, 0]
+) {
+  // Apply circle packing to direct children and recurse (bottom-up packing with scaling)
+  // parentCenter is the absolute position of this node in root coordinate space
+  const name = nameSoFar ? `${nameSoFar}/${node.name}` : node.name;
+
+  if (!node.children || node.children.length === 0) {
+    return;
+  }
+
+  // Step 1: Recursively pack all children FIRST (depth-first, bottom-up)
+  // and compute their actualRadius before packing siblings
+  // Children are packed relative to [0,0] and will be translated later
+  for (const child of node.children) {
+    if (nestedMode && isGitRepoRoot(child)) {
+      // Git repo root: will use voronoi, no packing needed here
+      // Layout will be set later in the git repo root handler
+      continue;
+    }
+    if (child.children && child.children.length > 0) {
+      // Recursively pack non-git-root children relative to [0,0]
+      packChildren(
+        name,
+        child,
+        points,
+        goodenough,
+        depth + 1,
+        nestedMode,
+        [0, 0]  // Pack relative to origin, will translate later
+      );
+    }
+  }
+
+  // Step 2: Compute actualRadius for each child BEFORE packing
+  // This is needed because packing should use the actual visual size (which may be scaled)
+  const childRadii = new Map();
+  for (const child of node.children) {
+    let actualRadius = Math.sqrt(child.value);
+    
+    // For non-git-root nodes with children, check if they need a larger radius
+    if (nestedMode && !isGitRepoRoot(child) && child.children && child.children.length > 0) {
+      const packedChildrenRadii = child.children
+        .filter(gc => gc.layout)
+        .map(gc => {
+          const childCenter = gc.layout.center || [0, 0];
+          const childRadius = gc.layout.radius || (gc.layout.width / 2) || 0;
+          return {
+            x: childCenter[0],
+            y: childCenter[1],
+            r: childRadius
+          };
+        });
+      
+      if (packedChildrenRadii.length > 0) {
+        const requiredRadius = calculateEnclosingRadius(packedChildrenRadii);
+        if (requiredRadius > actualRadius) {
+          actualRadius = requiredRadius;
+        }
+      }
+    }
+    
+    childRadii.set(child, actualRadius);
+  }
+
+  // Step 3: Pack siblings using their actualRadius values
+  const children = node.children.map((child) => {
+    return { r: childRadii.get(child), originalObject: child };
+  });
+
+  d3.packSiblings(children);
+  const enclosingCircle = d3.packEnclose(children);
+  const { x: encX, y: encY, r: encR } = enclosingCircle;
+
+  if (depth < 3) {
+    console.warn(
+      `circle packing for ${name} with ${node.children.length} children`
+    );
+  } else if (depth === 3) {
+    console.warn(
+      `circle packing for ${name} and descendants with ${node.children.length} children`
+    );
+  }
+
+  // Step 4: Process each packed child and set its layout
+  for (const child of children) {
+    const naturalRadius = Math.sqrt(child.originalObject.value);
+    const actualRadius = child.r; // This is the radius we used for packing (from childRadii map)
+    const scaleFactor = actualRadius / naturalRadius;
+    
+    if (depth < 3 && scaleFactor > 1.0) {
+      console.warn(
+        `scaling ${child.originalObject.name}: natural=${naturalRadius.toFixed(2)}, actual=${actualRadius.toFixed(2)}, scaleFactor=${scaleFactor.toFixed(3)}`
+      );
+    }
+
+    // Position child in ABSOLUTE coordinate system
+    // child.x and child.y are positions from d3.packSiblings (relative to parent's origin)
+    // Add parentCenter to get absolute position
+    const absoluteCenter = [parentCenter[0] + child.x, parentCenter[1] + child.y];
+    const clipPolygon = computeCirclingPolygon(points, actualRadius).map(
+      ([x, y]) => [absoluteCenter[0] + x, absoluteCenter[1] + y]
+    );
+
+    child.originalObject.layout = {
+      polygon: clipPolygon,
+      center: absoluteCenter,
+      width: actualRadius * 2,
+      height: actualRadius * 2,
+      algorithm: 'circlePack',
+      radius: actualRadius,
+      naturalRadius: naturalRadius,
+      scaleFactor: scaleFactor,
+    };
+    
+    // Now that we know the child's absolute position, translate its subtree
+    // Children were packed relative to [0,0] in Step 1, now translate to absoluteCenter
+    if (nestedMode && !isGitRepoRoot(child.originalObject) && child.originalObject.children) {
+      for (const grandchild of child.originalObject.children) {
+        translateSubtree(grandchild, absoluteCenter[0], absoluteCenter[1]);
+      }
+    }
+
+    if (nestedMode && isGitRepoRoot(child.originalObject)) {
+      // Hit a git repo root - switch to voronoi for this subtree
+      if (debug) {
+        console.warn(
+          `detected git repo root at ${child.originalObject.name}, switching to voronoi`
+        );
+      }
+      calculateVoronoi(
+        child.originalObject.name,
+        child.originalObject,
+        clipPolygon,
+        absoluteCenter,
+        goodenough,
+        depth + 1
+      );
+    } else if (!nestedMode && child.originalObject.children) {
+      // Original top-level circles mode - apply voronoi to children (without nested mode)
+      calculateVoronoi(
+        child.originalObject.name,
+        child.originalObject,
+        clipPolygon,
+        absoluteCenter,
+        goodenough,
+        depth + 1
+      );
+    }
+  }
+}
+
+function calculateNestedCircles(
+  nameSoFar,
+  node,
+  points,
+  goodenough,
+  depth,
+  parentCenter = [0, 0]
+) {
+  const name = nameSoFar ? `${nameSoFar}/${node.name}` : node.name;
+
+  // Check if this is a git repo root
+  if (isGitRepoRoot(node)) {
+    // At repo root: apply voronoi to all descendants
+    if (debug) {
+      console.warn(`git repo root detected at ${name}, applying voronoi`);
+    }
+    const clipPolygon = computeCirclingPolygon(points, 512);
+    const center = [0, 0];
+    const value = node.value || 0;
+    const naturalRadius = Math.sqrt(value);
+    node.layout = {
+      polygon: clipPolygon,
+      center,
+      algorithm: 'voronoi',
+      width: 1024,
+      height: 1024,
+      radius: naturalRadius,
+      naturalRadius: naturalRadius,
+      scaleFactor: 1.0,
+    };
+    calculateVoronoi(name, node, clipPolygon, center, goodenough, depth);
+    return;
+  }
+
+  if (!node.children || node.children.length === 0) {
+    // Leaf node - no layout needed beyond parent
+    return;
+  }
+
+  // Not a repo root: apply circle packing and recurse
+  packChildren(name, node, points, goodenough, depth, true, parentCenter);
+  
+  // After packing children, calculate this node's radius to enclose them
+  const naturalRadius = Math.sqrt(node.value || 0);
+  let actualRadius = naturalRadius;
+  let scaleFactor = 1.0;
+  
+  const packedChildrenRadii = node.children
+    .filter(child => child.layout) // only children that have been packed
+    .map(child => {
+      const childCenter = child.layout.center || [0, 0];
+      const childRadius = child.layout.radius || (child.layout.width / 2) || 0;
+      // NOTE: child.layout.radius is already actualRadius (scaled if needed), so don't multiply by scaleFactor again
+      return {
+        x: childCenter[0],
+        y: childCenter[1],
+        r: childRadius
+      };
+    });
+
+  if (packedChildrenRadii.length > 0) {
+    const requiredRadius = calculateEnclosingRadius(packedChildrenRadii);
+    if (requiredRadius > naturalRadius) {
+      actualRadius = requiredRadius;
+      scaleFactor = actualRadius / naturalRadius;
+      if (depth < 3) {
+        console.warn(
+          `scaling root node: natural=${naturalRadius.toFixed(2)}, required=${requiredRadius.toFixed(2)}, scaleFactor=${scaleFactor.toFixed(3)}`
+        );
+      }
+      // NOTE: We do NOT scale child positions!
+      // The children are already optimally packed by d3.packSiblings at their current positions.
+      // We simply record that the root needs a bigger radius (actualRadius) to contain them.
+      // scaleFactor is just metadata showing how much bigger the root needs to be.
+    }
+  }
+  
+  // Set the root node's layout
+  node.layout = {
+    polygon: computeCirclingPolygon(points, actualRadius),
+    center: [0, 0],
+    algorithm: 'nestedCircles',
+    width: actualRadius * 2,
+    height: actualRadius * 2,
+    radius: actualRadius,
+    naturalRadius: naturalRadius,
+    scaleFactor: scaleFactor,
+  };
+}
+
+
 function calculate_values(node) {
   if (node.children) {
     for (const n of node.children) {
@@ -82,10 +383,15 @@ function calculateVoronoi(
   depth
 ) {
   const name = nameSoFar ? `${nameSoFar}/${node.name}` : node.name;
+  const value = node.value || 0;
+  const naturalRadius = Math.sqrt(value);
   node.layout = {
     polygon: clipPolygon,
     center,
     algorithm: 'voronoi',
+    radius: naturalRadius,
+    naturalRadius: naturalRadius,
+    scaleFactor: 1.0, // Voronoi/git-roots always have 1:1 scaling
   };
 
   if (!node.children) {
@@ -281,7 +587,7 @@ async function writeLargeJson(filePath, obj) {
   });
 }
 
-async function main({ input, output, points, circles, goodenough }) {
+async function main({ input, output, points, circles, nestedCircles, goodenough }) {
   const parsedData = input
     ? await readLargeFile(input)
     : await (async () => {
@@ -297,8 +603,28 @@ async function main({ input, output, points, circles, goodenough }) {
   console.warn('pruning empty nodes');
   pruneWeightlessNodes(treeData);
 
-  // top level clip shape
-  if (circles) {
+  // Handle nested circles mode
+  if (nestedCircles) {
+    console.warn('using nested circle packing until git repo root');
+    const clipPolygon = computeCirclingPolygon(points, width / 2);
+    const center = [0, 0];
+    const value = treeData.value || 0;
+    const naturalRadius = Math.sqrt(value);
+
+    treeData.layout = {
+      polygon: clipPolygon,
+      center,
+      algorithm: 'nestedCircles',
+      width,
+      height: width,
+      radius: naturalRadius,
+      naturalRadius: naturalRadius,
+      scaleFactor: 1.0,
+    };
+
+    calculateNestedCircles(null, treeData, points, goodenough, 0);
+  } else if (circles) {
+    // top level circle packing mode
     // area = pi r^2 so r = sqrt(area/pi) or just use sqrt(area) for simplicity
     const children = treeData.children.map((child) => {
       return { r: Math.sqrt(child.value), originalObject: child };
@@ -307,6 +633,7 @@ async function main({ input, output, points, circles, goodenough }) {
     // top level layout
     const enclosingCirle = d3.packEnclose(children);
     const { x, y, r } = enclosingCirle;
+    const naturalRadius = r;
     // TODO: offset by x/y
     treeData.layout = {
       polygon: computeCirclingPolygon(points, r),
@@ -314,12 +641,17 @@ async function main({ input, output, points, circles, goodenough }) {
       width: r * 2,
       height: r * 2,
       algorithm: 'circlePack',
+      radius: r,
+      naturalRadius: naturalRadius,
+      scaleFactor: 1.0,
     };
 
     for (const child of children) {
+      const childRadius = child.r;
+      const childNaturalRadius = Math.sqrt(child.originalObject.value);
       const clipPolygon = computeCirclingPolygon(
         points,
-        child.r
+        childRadius
       ).map(([x, y]) => [x + child.x, y + child.y]);
       const center = [child.x, child.y];
 
@@ -331,17 +663,26 @@ async function main({ input, output, points, circles, goodenough }) {
         goodenough,
         1
       );
-      child.originalObject.layout.width = child.r;
-      child.originalObject.layout.height = child.r;
+      child.originalObject.layout.width = childRadius * 2;
+      child.originalObject.layout.height = childRadius * 2;
+      child.originalObject.layout.radius = childRadius;
+      child.originalObject.layout.naturalRadius = childNaturalRadius;
+      child.originalObject.layout.scaleFactor = childRadius / childNaturalRadius;
     }
   } else {
+    // voronoi-only mode
     const clipPolygon = computeCirclingPolygon(points, width / 2);
     const center = [0, 0];
+    const value = treeData.value || 0;
+    const naturalRadius = Math.sqrt(value);
 
     calculateVoronoi(null, treeData, clipPolygon, center, goodenough, 0);
 
     treeData.layout.width = width;
     treeData.layout.height = width;
+    treeData.layout.radius = naturalRadius;
+    treeData.layout.naturalRadius = naturalRadius;
+    treeData.layout.scaleFactor = 1.0;
   }
 
   const treeWithPaths = addPaths(null, treeData);
@@ -379,6 +720,10 @@ const argv = yargs
   .boolean('c')
   .alias('c', 'circles')
   .default('c', false)
+  .describe('n', 'use nested circle packing until git repo root, then voronoi')
+  .boolean('n')
+  .alias('n', 'nested-circles')
+  .default('n', false)
   .help('h')
   .alias('h', 'help').argv;
 
@@ -387,6 +732,7 @@ const args = {
   output: argv.output,
   points: argv.points,
   circles: argv.circles,
+  nestedCircles: argv['nested-circles'],
   goodenough: argv.goodenough,
 };
 
