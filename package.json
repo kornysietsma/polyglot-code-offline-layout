@@ -30,5 +30,8 @@
     "eslint-plugin-prettier": "^3.1.4",
     "pkg": "^4.4.9",
     "prettier": "^2.1.1"
+  },
+  "overrides": {
+    "ansi-regex": "5.0.1"
   }
 }
