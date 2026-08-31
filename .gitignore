@@ -1,5 +1,4 @@
 /.vscode
 /node_modules
-/dist
 /manual_test
 /manual_test.sh

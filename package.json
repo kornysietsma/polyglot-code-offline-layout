@@ -10,7 +10,6 @@
     "polyglot-code-offline-layout": "layout.js"
   },
   "scripts": {
-    "build": "pkg --targets=node14-macos,node14-win,node14-linux --out-path=dist .",
     "test": "node test/layout.test.js"
   },
   "author": "korny@sietsma.com",
@@ -28,7 +27,6 @@
     "eslint": "^7.7.0",
     "eslint-config-prettier": "^6.11.0",
     "eslint-plugin-prettier": "^3.1.4",
-    "pkg": "^4.4.9",
     "prettier": "^2.1.1"
   }
 }

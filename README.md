@@ -6,7 +6,7 @@ For an overview see <https://polyglot.korny.info>
 
 For more detailed instructions on running this tool see <https://polyglot.korny.info/tools/layout/howto>
 
-You can run this script using node.js, or via Docker - or binary builds are coming
+You run this script from source with node.js - see below.
 
 ## WORK IN PROGRESS WARNING
 
@@ -15,7 +15,7 @@ I'm doing a lot of changes right now - if you fetch the current code, things may
 Especially note, I'm changed the data file formats created by the explorer and used by the scanner - I've added version number checks, but data files from the Scanner must match expectations of the Explorer, so for now it's a bit of "make sure you pull changes often" or things will break.
 
 
-## Running this script using node.js
+## Running this script
 
 1. Install node.js - see https://nodejs.org/en/download/package-manager/
 2. clone the code from https://github.com/kornysietsma/polyglot-code-offline-layout
@@ -64,28 +64,3 @@ This runs `test/layout.test.js`, which builds small trees in memory, runs
 on - above all that a repository is drawn with an area proportional to its lines
 of code, at the same ratio however deeply it is nested in the directory tree.
 See `AGENTS.md` for the full list.
-
-## Binary executables
-
-If you don't want to install node.js, you can fetch a bundled executable file instead.
-
-I am using [pkg](https://www.npmjs.com/package/pkg) to package up runnable executables.
-
-### Fetching binary releases
-
-Binary releases are published to <https://github.com/kornysietsma/polyglot-code-offline-layout/releases>
-
-You should be able to download the right file for your platform here.  Note I haven't tested this at all on Windows yet!  And I only have a single generic build for linux and OSX - if you are on another platform, you'll have to use node.js for now.
-
-### Getting binaries to work on mac OSX
-
-OSX has a system to protect you from malware, called 'gatekeeper' - by default on OSX if you try to run the binary app, you'll get an error "app is from an unknown developer".  To bypass this I'd have to go through a complex extra stage of signing and bundling my tool as an application, which I'm avoiding for now.
-
-If you are happy that the binary is safe - all the code that builds it is on github, so you should be able to inspect it yourself - you can run it by stripping the extra attributes that OSX adds when you download it:
-
-```sh
-unzip polyglot-code-offline-layout-macos.zip
-xattr -d com.apple.quarantine polyglot-code-offline-layout
-```
-
-Then you can move the `polyglot-code-offline-layout` binary to wherever you want.
