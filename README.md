@@ -53,6 +53,18 @@ There are some optional parameters:
 - -g (the default) to accept an imperfect voronoi map - if you turn this off, the script will fail if it can't find a precise layout
 - -p NNN - specify how many points to use to draw the main circles around voronoi treemaps.  The default is 128, which is a pretty smooth circle.  You could specify `-p 6` and it will use hexagons!
 
+## Testing
+
+```sh
+$ npm test
+```
+
+This runs `test/layout.test.js`, which builds small trees in memory, runs
+`layout.js` in each mode, and checks the geometric invariants the layout relies
+on - above all that a repository is drawn with an area proportional to its lines
+of code, at the same ratio however deeply it is nested in the directory tree.
+See `AGENTS.md` for the full list.
+
 ## Binary executables
 
 If you don't want to install node.js, you can fetch a bundled executable file instead.

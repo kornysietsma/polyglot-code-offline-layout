@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "pkg --targets=node14-macos,node14-win,node14-linux --out-path=dist .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test/layout.test.js"
   },
   "author": "korny@sietsma.com",
   "license": "ISC",
