@@ -28,5 +28,8 @@
     "eslint-config-prettier": "^6.11.0",
     "eslint-plugin-prettier": "^3.1.4",
     "prettier": "^2.1.1"
+  },
+  "overrides": {
+    "ansi-regex": "5.0.1"
   }
 }
