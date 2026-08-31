@@ -99,9 +99,17 @@ function calculateEnclosingRadius(packedChildren) {
   return maxDist;
 }
 
-// Helper: Calculate natural radius from value (for voronoi-like sizing)
-function getNaturalRadius(value) {
-  return Math.sqrt(value);
+// Helper: record the bounding-circle metrics of a circle-packed node.
+// calculateVoronoi() replaces node.layout wholesale, so any node that was
+// *positioned* by circle packing but whose *contents* are laid out by voronoi
+// (i.e. every git repo root) must have these re-applied afterwards - otherwise
+// it loses width/height, which consumers use to size the node.
+function applyCircleMetrics(node, radius, naturalRadius) {
+  node.layout.width = radius * 2;
+  node.layout.height = radius * 2;
+  node.layout.radius = radius;
+  node.layout.naturalRadius = naturalRadius;
+  node.layout.scaleFactor = naturalRadius > 0 ? radius / naturalRadius : 1.0;
 }
 
 // Helper: Translate all coordinates in a subtree by an offset
@@ -193,9 +201,9 @@ function packChildren(
     return { r: childRadii.get(child), originalObject: child };
   });
 
+  // packSiblings centres its result on the enclosing circle, so children are
+  // already positioned relative to [0,0] - no packEnclose offset is needed here.
   d3.packSiblings(children);
-  const enclosingCircle = d3.packEnclose(children);
-  const { x: encX, y: encY, r: encR } = enclosingCircle;
 
   if (depth < 3) {
     console.warn(
@@ -261,6 +269,8 @@ function packChildren(
         goodenough,
         depth + 1
       );
+      // calculateVoronoi replaced the layout set above - restore the circle metrics
+      applyCircleMetrics(child.originalObject, actualRadius, naturalRadius);
     } else if (!nestedMode && child.originalObject.children) {
       // Original top-level circles mode - apply voronoi to children (without nested mode)
       calculateVoronoi(
@@ -271,6 +281,7 @@ function packChildren(
         goodenough,
         depth + 1
       );
+      applyCircleMetrics(child.originalObject, actualRadius, naturalRadius);
     }
   }
 }
@@ -287,25 +298,18 @@ function calculateNestedCircles(
 
   // Check if this is a git repo root
   if (isGitRepoRoot(node)) {
-    // At repo root: apply voronoi to all descendants
+    // At repo root: apply voronoi to all descendants.
+    // Size the clip circle by sqrt(value), the same scale used by every other
+    // circle in this mode, so that a tree which is itself one repo has the same
+    // area:loc ratio as a repo nested inside directories.
     if (debug) {
       console.warn(`git repo root detected at ${name}, applying voronoi`);
     }
-    const clipPolygon = computeCirclingPolygon(points, 512);
+    const naturalRadius = Math.sqrt(node.value || 0);
+    const clipPolygon = computeCirclingPolygon(points, naturalRadius);
     const center = [0, 0];
-    const value = node.value || 0;
-    const naturalRadius = Math.sqrt(value);
-    node.layout = {
-      polygon: clipPolygon,
-      center,
-      algorithm: 'voronoi',
-      width: 1024,
-      height: 1024,
-      radius: naturalRadius,
-      naturalRadius: naturalRadius,
-      scaleFactor: 1.0,
-    };
     calculateVoronoi(name, node, clipPolygon, center, goodenough, depth);
+    applyCircleMetrics(node, naturalRadius, naturalRadius);
     return;
   }
 
@@ -388,6 +392,10 @@ function calculateVoronoi(
 ) {
   const name = nameSoFar ? `${nameSoFar}/${node.name}` : node.name;
   const value = node.value || 0;
+  // NOTE: for a voronoi node `radius` is notional - it is the radius a circle of
+  // this node's area would have, NOT a bounding radius for `polygon`, which is an
+  // arbitrary convex cell. Only circle-packed nodes (see applyCircleMetrics) have
+  // a radius that bounds their polygon. Don't use it for containment or hit tests.
   const naturalRadius = Math.sqrt(value);
   node.layout = {
     polygon: clipPolygon,
@@ -642,12 +650,12 @@ async function main({ input, output, points, circles, nestedCircles, goodenough 
     const children = treeData.children.map((child) => {
       return { r: Math.sqrt(child.value), originalObject: child };
     });
+    // packSiblings centres its result on the enclosing circle, so packEnclose
+    // gives us the radius we need with no x/y offset to apply.
     d3.packSiblings(children);
     // top level layout
-    const enclosingCirle = d3.packEnclose(children);
-    const { x, y, r } = enclosingCirle;
+    const { r } = d3.packEnclose(children);
     const naturalRadius = r;
-    // TODO: offset by x/y
     treeData.layout = {
       polygon: computeCirclingPolygon(points, r),
       center: [0, 0],
@@ -676,11 +684,7 @@ async function main({ input, output, points, circles, nestedCircles, goodenough 
         goodenough,
         1
       );
-      child.originalObject.layout.width = childRadius * 2;
-      child.originalObject.layout.height = childRadius * 2;
-      child.originalObject.layout.radius = childRadius;
-      child.originalObject.layout.naturalRadius = childNaturalRadius;
-      child.originalObject.layout.scaleFactor = childRadius / childNaturalRadius;
+      applyCircleMetrics(child.originalObject, childRadius, childNaturalRadius);
     }
   } else {
     // voronoi-only mode
